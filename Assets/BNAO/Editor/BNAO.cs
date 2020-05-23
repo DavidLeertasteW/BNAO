@@ -26,6 +26,8 @@ using UnityEngine.Rendering;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine.SceneManagement;
+using UnityEditor.SceneManagement;
 
 public class BNAO : EditorWindow
 {
@@ -91,6 +93,9 @@ public class BNAO : EditorWindow
 		UseMaterialParameter
 	}
 
+	public MeshRenderer GroundPlaneRenderer;
+	public bool useGroundPlane;
+
 	public BakeMode bakeMode = BakeMode.BentNormal;
 	public NormalsSpace bentNormalsSpace = NormalsSpace.Tangent;
 	public NormalsConversionMode normalsConversionMode = NormalsConversionMode.TangentToObject;
@@ -99,7 +104,7 @@ public class BNAO : EditorWindow
 	public Resolution shadowMapRes = Resolution._2048;
 	public int samples = 1024;
 	public int dilation = 32;
-	[Range(0, 1)]
+	[Range(0f, 1)]
 	public float shadowBias = 0.01f;
 	[Range(0, 1)]
 	public float aoBias = 0.5f;
@@ -113,6 +118,7 @@ public class BNAO : EditorWindow
 	public bool transparentPixels = false;
 	public string outputPath = "Assets/BNAO/Bakes";
 	public NameMode nameMode = NameMode.Shortest;
+	private bool deleteDoubles = false;
 
 	RenderTexture temp, shadowMap;
 
@@ -159,6 +165,7 @@ public class BNAO : EditorWindow
 
 	void OnGUI ()
 	{
+		
 		bakeMode				= (BakeMode)EditorGUILayout.EnumPopup("Bake Mode", bakeMode);
 		if (bakeMode != BakeMode.BentNormal) EditorGUI.BeginDisabledGroup(true);
 		bentNormalsSpace		= (NormalsSpace)EditorGUILayout.EnumPopup("Normals Space", bentNormalsSpace);
@@ -193,7 +200,7 @@ public class BNAO : EditorWindow
 		cullOverrideMode		= (CullOverrideMode)EditorGUILayout.EnumPopup(new GUIContent("Face Cull Override", "Force double or single-sided rendering. In most cases you probably want to force double-sided."), cullOverrideMode);
 		if (useOriginalShaders) EditorGUI.EndDisabledGroup();
 		if (bakeMode == BakeMode.NormalsConversion) EditorGUI.EndDisabledGroup();
-
+		if (bakeMode == BakeMode.AmbientOcclusion) useGroundPlane = EditorGUILayout.Toggle(new GUIContent("Use Ground Plane", "Ground Placed at (0,0,0), nice for things touching it."), useGroundPlane);
 		transparentPixels		= EditorGUILayout.Toggle(new GUIContent("Transparent Background", "Whether to fill background pixels in the output texture with neutral values or leave them blank."), transparentPixels);
 		GUILayout.Space(4);
 		outputPath				= EditorGUILayout.TextField("Output Folder", outputPath);
@@ -300,6 +307,23 @@ public class BNAO : EditorWindow
 
 	void Bake (GameObject[] selection)
 	{
+		deleteDoubles = false;
+        for (int i = 0; i < selection.Length; i++)
+        {
+            if (AssetDatabase.Contains(selection[i]))
+            {
+				deleteDoubles = true;
+            }
+        }
+        if (deleteDoubles)
+        {
+			for (int i = 0; i < selection.Length; i++)
+			{
+				selection[i] = GameObject.Instantiate(selection[i]);
+			}
+
+		}
+
 		if (Application.isPlaying || selection == null || selection.Length < 1)
 			return;
 
@@ -326,6 +350,18 @@ public class BNAO : EditorWindow
 		{
 			meshRenderers.AddRange(gameObject.GetComponentsInChildren<MeshRenderer>());
 			skinnedMeshRenderers.AddRange(gameObject.GetComponentsInChildren<SkinnedMeshRenderer>());
+
+			if(bakeMode == BakeMode.AmbientOcclusion && useGroundPlane)
+            {
+				GameObject planeObj = GameObject.CreatePrimitive(PrimitiveType.Plane);
+				planeObj.transform.position = Vector3.zero;
+				planeObj.transform.localScale = Vector3.one * 1000;
+				planeObj.tag = "RemoveAfterBake";
+				GameObject secondPlane = GameObject.Instantiate(planeObj);
+				secondPlane.transform.Rotate(Vector3.left, 180);
+				
+			}
+			
 		}
 		Material mat = null;
 		foreach (var renderer in meshRenderers)
@@ -481,6 +517,7 @@ public class BNAO : EditorWindow
 			// Initialize camera
 			var go = new GameObject("BNAO_BakeCamera");
 			var camera = go.AddComponent<Camera>();
+			camera.allowMSAA = true;
 			camera.enabled  = false;
 			camera.farClipPlane = rendererRadius * 2;
 			camera.nearClipPlane = 0.01f;
@@ -496,7 +533,17 @@ public class BNAO : EditorWindow
 			{
 				sceneEnabled[i] = scene[i].enabled;
 				if (!includeScene)
-					scene[i].enabled = false;
+				{
+					if (scene[i].CompareTag("RemoveAfterBake"))
+					{
+
+					}
+					else
+					{
+
+						scene[i].enabled = false;
+					}
+				}
 			}
 
 			// Force enable bake objects and force double sided rendering
@@ -568,6 +615,12 @@ public class BNAO : EditorWindow
 
 			// Clean up
 			DestroyImmediate(camera.gameObject);
+            
+			GameObject[] objcts = GameObject.FindGameObjectsWithTag("RemoveAfterBake");
+            for (int i = 0; i < objcts.Length; i++)
+            {
+				DestroyImmediate(objcts[i]);
+            }
 		}
 
 		EditorUtility.DisplayProgressBar(progressTitle, "Post Processing...", 1);
@@ -596,7 +649,7 @@ public class BNAO : EditorWindow
 		foreach (var bnaoObject in bnaoObjects)
 		{
 			Clear(temp, Color.clear);
-			temp.filterMode = FilterMode.Point;
+			temp.filterMode = FilterMode.Bilinear;
 			for (int i = 0; i < dilation; i++)
 			{
 				EditorUtility.DisplayProgressBar("Baking", "Dilating...", (float)i / (float)dilation);
@@ -638,6 +691,7 @@ public class BNAO : EditorWindow
 				break;
 			}
 			string fileName = names[0];
+			fileName = fileName.Replace("(Clone)", "");
 			switch (bakeMode)
 			{
 				case BakeMode.BentNormal:
@@ -656,6 +710,13 @@ public class BNAO : EditorWindow
 			fileName += ".png";
 			RenderTextureToFile(bnaoObject.Value.result, outputPath + "/" + fileName, composite);
 			u++;
+		}
+		if (deleteDoubles)
+		{
+			for (int i = 0; i < selection.Length; i++)
+			{
+				DestroyImmediate(selection[i]);
+			}
 		}
 
 		UnityEditor.AssetDatabase.Refresh();

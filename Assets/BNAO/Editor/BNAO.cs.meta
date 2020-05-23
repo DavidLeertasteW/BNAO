@@ -3,7 +3,10 @@ guid: 97f949e8da2c6a1479bc5059b56c11b2
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences: []
+  defaultReferences:
+  - m_ViewDataDictionary: {instanceID: 0}
+  - GroundPlaneRenderer: {fileID: 7607969613485072407, guid: 4f460bc88db0d8e4092af11d05b1682b,
+      type: 3}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 
