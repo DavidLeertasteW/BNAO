@@ -386,7 +386,6 @@ public class BNAO : EditorWindow
 				}
 				planeObj.transform.localScale = Vector3.one * 1000;
 				planeObj.transform.position += Vector3.up * groundPlaneOffset;
-
 				GameObject secondPlane = GameObject.Instantiate(planeObj);
 				secondPlane.transform.Rotate(Vector3.left, 180);
 
@@ -567,13 +566,12 @@ public class BNAO : EditorWindow
 				sceneEnabled[i] = scene[i].enabled;
 				if (!includeScene)
 				{
-					if (scene[i].CompareTag("RemoveAfterBake"))
+					if (groundPlaneObjects.Contains(scene[i].gameObject))
 					{
 
 					}
 					else
 					{
-
 						scene[i].enabled = false;
 					}
 				}
