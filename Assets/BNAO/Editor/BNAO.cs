@@ -92,9 +92,10 @@ public class BNAO : EditorWindow
 		ForceOneSided,
 		UseMaterialParameter
 	}
-
-	public MeshRenderer GroundPlaneRenderer;
 	public bool useGroundPlane;
+	public bool autoPlaceGroundplane;
+	public float groundPlaneOffset;
+	private List<GameObject> groundPlaneObjects = new List<GameObject>();
 
 	public BakeMode bakeMode = BakeMode.BentNormal;
 	public NormalsSpace bentNormalsSpace = NormalsSpace.Tangent;
@@ -119,6 +120,10 @@ public class BNAO : EditorWindow
 	public string outputPath = "Assets/BNAO/Bakes";
 	public NameMode nameMode = NameMode.Shortest;
 	private bool deleteDoubles = false;
+
+	private GameObject[] batchSelection;
+	private int batchIndex = 0;
+	private bool batchBake = false;
 
 	RenderTexture temp, shadowMap;
 
@@ -201,6 +206,8 @@ public class BNAO : EditorWindow
 		if (useOriginalShaders) EditorGUI.EndDisabledGroup();
 		if (bakeMode == BakeMode.NormalsConversion) EditorGUI.EndDisabledGroup();
 		if (bakeMode == BakeMode.AmbientOcclusion) useGroundPlane = EditorGUILayout.Toggle(new GUIContent("Use Ground Plane", "Ground Placed at (0,0,0), nice for things touching it."), useGroundPlane);
+		if (bakeMode == BakeMode.AmbientOcclusion && useGroundPlane) autoPlaceGroundplane = EditorGUILayout.Toggle(new GUIContent("Auto Place Ground", "If enabled, ground will be placed at the lowest point of the object's bounding box. Otherwise ground is placed at (0,0,0)."), autoPlaceGroundplane);
+		if (bakeMode == BakeMode.AmbientOcclusion && useGroundPlane) groundPlaneOffset = EditorGUILayout.FloatField(new GUIContent("Ground Plane Y Offset", "Moves the ground up or down. Using negative values are reccomended, as they will move the ground away from your object, not into it."), groundPlaneOffset);
 		transparentPixels		= EditorGUILayout.Toggle(new GUIContent("Transparent Background", "Whether to fill background pixels in the output texture with neutral values or leave them blank."), transparentPixels);
 		GUILayout.Space(4);
 		outputPath				= EditorGUILayout.TextField("Output Folder", outputPath);
@@ -208,11 +215,25 @@ public class BNAO : EditorWindow
 		var rect = GUILayoutUtility.GetLastRect();
 
 		if (Selection.gameObjects.Length < 1) EditorGUI.BeginDisabledGroup(true);
-		if (GUILayout.Button(Selection.gameObjects.Length < 1 ? "Select some objects to bake!" : (Selection.gameObjects.Length == 1 ? "Bake Selected Object" : "Bake Selected Objects")))
+		if (GUILayout.Button(Selection.gameObjects.Length < 1 ? "Select some objects to bake!" : (Selection.gameObjects.Length == 1 ? "Bake Selected Object" : "Bake Objects Combined")))
 		{
 			Bake(Selection.gameObjects);
 		}
 		if (Selection.gameObjects.Length < 1) EditorGUI.EndDisabledGroup();
+
+
+		if (Selection.gameObjects.Length > 1) {
+			if (GUILayout.Button("Batch Bake Objects Individually"))
+			{
+				batchIndex = 0;
+				batchBake = true;
+				GameObject[] objects = new GameObject[1];
+				objects[0] = Selection.gameObjects[0];
+				Bake(objects);
+				
+			}
+		}
+		
 	}
 
 	/// <summary>
@@ -354,11 +375,23 @@ public class BNAO : EditorWindow
 			if(bakeMode == BakeMode.AmbientOcclusion && useGroundPlane)
             {
 				GameObject planeObj = GameObject.CreatePrimitive(PrimitiveType.Plane);
-				planeObj.transform.position = Vector3.zero;
+
+				if (autoPlaceGroundplane)
+				{
+					planeObj.transform.position = gameObject.GetComponent<MeshRenderer>().bounds.min;
+				}
+				else
+				{
+					planeObj.transform.position = Vector3.zero;
+				}
 				planeObj.transform.localScale = Vector3.one * 1000;
-				planeObj.tag = "RemoveAfterBake";
+				planeObj.transform.position += Vector3.up * groundPlaneOffset;
+
 				GameObject secondPlane = GameObject.Instantiate(planeObj);
 				secondPlane.transform.Rotate(Vector3.left, 180);
+
+				groundPlaneObjects.Add(planeObj);
+				groundPlaneObjects.Add(secondPlane);
 				
 			}
 			
@@ -616,11 +649,12 @@ public class BNAO : EditorWindow
 			// Clean up
 			DestroyImmediate(camera.gameObject);
             
-			GameObject[] objcts = GameObject.FindGameObjectsWithTag("RemoveAfterBake");
+			GameObject[] objcts = groundPlaneObjects.ToArray();
             for (int i = 0; i < objcts.Length; i++)
             {
 				DestroyImmediate(objcts[i]);
             }
+			groundPlaneObjects.Clear();
 		}
 
 		EditorUtility.DisplayProgressBar(progressTitle, "Post Processing...", 1);
@@ -722,6 +756,15 @@ public class BNAO : EditorWindow
 		UnityEditor.AssetDatabase.Refresh();
 
 		EditorUtility.ClearProgressBar();
+
+		if(batchBake && batchIndex < Selection.gameObjects.Length-1)
+        {
+			batchIndex += 1;
+			GameObject[] objects = new GameObject[1];
+			objects[0] = Selection.gameObjects[batchIndex];
+			Bake(objects);
+
+		}
 	}
 
 	void Clear (RenderTexture rt, Color clearColor)
