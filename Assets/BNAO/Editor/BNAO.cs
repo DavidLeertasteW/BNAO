@@ -121,7 +121,6 @@ public class BNAO : EditorWindow
 	public NameMode nameMode = NameMode.Shortest;
 	private bool deleteDoubles = false;
 
-	private GameObject[] batchSelection;
 	private int batchIndex = 0;
 	private bool batchBake = false;
 
@@ -217,6 +216,7 @@ public class BNAO : EditorWindow
 		if (Selection.gameObjects.Length < 1) EditorGUI.BeginDisabledGroup(true);
 		if (GUILayout.Button(Selection.gameObjects.Length < 1 ? "Select some objects to bake!" : (Selection.gameObjects.Length == 1 ? "Bake Selected Object" : "Bake Objects Combined")))
 		{
+			batchBake = false;
 			Bake(Selection.gameObjects);
 		}
 		if (Selection.gameObjects.Length < 1) EditorGUI.EndDisabledGroup();
@@ -593,7 +593,15 @@ public class BNAO : EditorWindow
 
 			for (int sample = 0; sample < (int)samples; sample++)
 			{
-				EditorUtility.DisplayProgressBar(progressTitle, "Baking sample " + sample + " / " + (int)(samples) + "...", (float)sample / (float)samples);
+				if (!batchBake)
+				{
+					EditorUtility.DisplayProgressBar(progressTitle, "Baking sample " + sample + " / " + (int)(samples) + "...", (float)sample / (float)samples);
+                }
+                else
+                {
+					string count = "(" + (batchIndex + 1).ToString() + "/" + Selection.gameObjects.Length.ToString() + ")";
+					EditorUtility.DisplayProgressBar(progressTitle + " " + count, "Baking sample " + sample + " / " + (int)(samples) + "...", (float)sample / (float)samples);
+				}
 			
 				var dir = directions[sample];
 				// Position the camera
@@ -765,6 +773,8 @@ public class BNAO : EditorWindow
 			Bake(objects);
 
 		}
+		batchBake = false;
+		batchIndex = 0;
 	}
 
 	void Clear (RenderTexture rt, Color clearColor)
