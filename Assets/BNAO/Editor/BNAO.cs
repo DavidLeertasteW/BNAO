@@ -378,7 +378,16 @@ public class BNAO : EditorWindow
 
 				if (autoPlaceGroundplane)
 				{
-					planeObj.transform.position = gameObject.GetComponent<MeshRenderer>().bounds.min;
+					float positionY = 1000;
+                    foreach (var item in meshRenderers)
+                    {
+						positionY = item.bounds.min.y < positionY ? item.bounds.min.y : positionY;
+					}
+					foreach (var item in skinnedMeshRenderers)
+					{
+						positionY = item.bounds.min.y < positionY ? item.bounds.min.y : positionY;
+					}
+					planeObj.transform.position = new Vector3(0, positionY, 0);
 				}
 				else
 				{
